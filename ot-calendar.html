@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>บันทึกชั่วโมงทำงาน</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Mali:wght@400;600;700&display=swap">
+<style>
+  :root{--pink:#ffb6c8;--pink2:#ffe4ec;--hot:#ff7aa2;--mint:#c8f0e0;--sky:#d6ecff;--lemon:#fff6c7;--text:#6b4a5a}
+  body{font-family:'Mali',system-ui,sans-serif;max-width:900px;margin:auto;padding:16px;color:var(--text);
+    background:#fff5f8 radial-gradient(#ffd6e3 1.5px,transparent 1.5px) 0 0/22px 22px}
+  h1{text-align:center;color:var(--hot);margin:8px 0 16px;font-size:1.6rem}
+  header{display:flex;align-items:center;justify-content:space-between;background:#fff;border-radius:24px;padding:6px 10px;box-shadow:0 4px 0 var(--pink)}
+  header h2{margin:0;font-size:1.3rem}
+  button{font:inherit;font-size:1.4rem;width:44px;height:44px;border:none;border-radius:50%;background:var(--pink);color:#fff;cursor:pointer;transition:transform .15s}
+  button:hover{transform:scale(1.1) rotate(-8deg)}
+  #grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin:16px 0}
+  .h{text-align:center;font-weight:700;font-size:.85rem;padding:4px 0;border-radius:12px;background:var(--sky)}
+  .h:first-child,.h:nth-child(7){background:var(--pink2)}
+  .d{background:#fff;border:2px solid var(--pink2);border-radius:16px;padding:6px 4px;font-size:.8rem;text-align:center;transition:transform .15s}
+  .d:hover{transform:translateY(-2px)}
+  .d.has{background:var(--lemon)}
+  .d.today{border-color:var(--hot);box-shadow:0 0 0 3px var(--pink2)}
+  .d.today b::after{content:' 🌸'}
+  .d input{width:100%;box-sizing:border-box;margin-top:3px;font:inherit;font-size:.8rem;text-align:center;border:1.5px dashed var(--pink);border-radius:10px;padding:2px;background:#fffafb;color:var(--text);-moz-appearance:textfield}
+  .d input::-webkit-inner-spin-button,.d input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+  .d input[data-i="1"]{border-color:#9ad9c0;background:#f3fcf8}
+  .d input:focus{outline:none;border-style:solid;border-color:var(--hot)}
+  h3{color:var(--hot);margin:20px 0 8px}
+  .sum{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .sum div{background:#fff;border-radius:20px;padding:12px 6px;text-align:center;font-size:.85rem;box-shadow:0 4px 0 var(--mint)}
+  .sum div:nth-child(2){box-shadow:0 4px 0 var(--sky)}
+  .sum div:nth-child(3){box-shadow:0 4px 0 #ffe08a;background:var(--lemon)}
+  .sum b{display:block;font-size:1.5rem;margin-top:4px;color:var(--hot)}
+</style>
+</head>
+<body>
+<h1>🐰 บันทึกชั่วโมงทำงาน ✨</h1>
+<header><button id="prev" aria-label="เดือนก่อน">‹</button><h2 id="title"></h2><button id="next" aria-label="เดือนถัดไป">›</button></header>
+<div id="grid"></div>
+
+<h3>🍓 สรุปเดือนนี้</h3>
+<div class="sum"><div>⏰ ชั่วโมงทำงาน<b id="mW"></b></div><div>🌙 โอที (ชม.)<b id="mO"></b></div><div>💰 เงินโอที (บาท)<b id="mM"></b></div></div>
+<h3>🧁 รวมทั้งหมด</h3>
+<div class="sum"><div>⏰ ชั่วโมงทำงาน<b id="tW"></b></div><div>🌙 โอที (ชม.)<b id="tO"></b></div><div>💰 เงินโอที (บาท)<b id="tM"></b></div></div>
+
+<script>
+const RATE = 75; // บาท ต่อ ชม. โอที
+const $ = id => document.getElementById(id);
+const fmt = n => n.toLocaleString('th-TH');
+const key = (y, m, d) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+
+// ponytail: เก็บใน localStorage ของเบราว์เซอร์ — ล้างข้อมูลเบราว์เซอร์แล้วหาย
+let data = {}; // { "2026-10-10": [ชม.งาน, ชม.โอที] }
+try { data = JSON.parse(localStorage.getItem('workhours')) || {}; } catch {}
+const save = () => { try { localStorage.setItem('workhours', JSON.stringify(data)); } catch {} };
+
+const view = new Date(); view.setDate(1);
+
+function render() {
+  const y = view.getFullYear(), m = view.getMonth(), now = new Date();
+  const todayKey = key(now.getFullYear(), now.getMonth(), now.getDate());
+  $('title').textContent = view.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' });
+  let html = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'].map(d => `<div class="h">${d}</div>`).join('')
+    + '<div></div>'.repeat(new Date(y, m, 1).getDay());
+  for (let d = 1, n = new Date(y, m + 1, 0).getDate(); d <= n; d++) {
+    const k = key(y, m, d), [w, o] = data[k] || [];
+    html += `<div class="d${k === todayKey ? ' today' : ''}${data[k] ? ' has' : ''}"><b>${d}</b>
+      <input type="number" min="0" max="24" step="0.5" inputmode="decimal" data-k="${k}" data-i="0" value="${w || ''}" placeholder="ชม.งาน" aria-label="ชั่วโมงทำงานวันที่ ${d}">
+      <input type="number" min="0" max="24" step="0.5" inputmode="decimal" data-k="${k}" data-i="1" value="${o || ''}" placeholder="OT" aria-label="โอทีวันที่ ${d}">
+    </div>`;
+  }
+  $('grid').innerHTML = html;
+  summary();
+}
+
+function summary() {
+  const prefix = key(view.getFullYear(), view.getMonth(), 1).slice(0, 8); // "2026-10-"
+  let mw = 0, mo = 0, tw = 0, to = 0;
+  for (const [k, [w, o]] of Object.entries(data)) {
+    tw += w; to += o;
+    if (k.startsWith(prefix)) { mw += w; mo += o; }
+  }
+  $('mW').textContent = fmt(mw); $('mO').textContent = fmt(mo); $('mM').textContent = fmt(mo * RATE);
+  $('tW').textContent = fmt(tw); $('tO').textContent = fmt(to); $('tM').textContent = fmt(to * RATE);
+}
+
+$('grid').oninput = e => {
+  const { k, i } = e.target.dataset;
+  const v = data[k] || [0, 0];
+  v[i] = Math.max(0, parseFloat(e.target.value) || 0);
+  if (v[0] || v[1]) data[k] = v; else delete data[k];
+  e.target.parentNode.classList.toggle('has', !!data[k]);
+  save(); summary();
+};
+$('prev').onclick = () => { view.setMonth(view.getMonth() - 1); render(); };
+$('next').onclick = () => { view.setMonth(view.getMonth() + 1); render(); };
+render();
+</script>
+</body>
+</html>
