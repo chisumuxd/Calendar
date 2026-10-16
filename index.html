@@ -7,13 +7,23 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Mali:wght@400;600;700&display=swap">
 <style>
   :root{--pink:#ffb6c8;--pink2:#ffe4ec;--hot:#ff7aa2;--mint:#c8f0e0;--sky:#d6ecff;--lemon:#fff6c7;--text:#6b4a5a}
+  [hidden]{display:none!important}
   body{font-family:'Mali',system-ui,sans-serif;max-width:900px;margin:auto;padding:16px;color:var(--text);
     background:#fff5f8 radial-gradient(#ffd6e3 1.5px,transparent 1.5px) 0 0/22px 22px}
   h1{text-align:center;color:var(--hot);margin:8px 0 16px;font-size:1.6rem}
+  .card{max-width:320px;margin:40px auto;background:#fff;border-radius:24px;padding:24px;box-shadow:0 6px 0 var(--pink);display:flex;flex-direction:column;gap:10px;text-align:center}
+  .card h2{margin:0 0 6px;color:var(--hot)}
+  .card input{font:inherit;padding:10px 14px;border:2px dashed var(--pink);border-radius:14px;color:var(--text);background:#fffafb}
+  .card input:focus{outline:none;border-style:solid;border-color:var(--hot)}
+  #msg{color:#e0457b;margin:0;min-height:1.2em;font-size:.9rem}
+  .btn{font:inherit;font-size:1rem;padding:10px;border:none;border-radius:999px;background:var(--hot);color:#fff;cursor:pointer}
+  .btn.alt{background:var(--mint);color:var(--text)}
+  .bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+  .bar .btn{padding:6px 14px;font-size:.85rem}
   header{display:flex;align-items:center;justify-content:space-between;background:#fff;border-radius:24px;padding:6px 10px;box-shadow:0 4px 0 var(--pink)}
   header h2{margin:0;font-size:1.3rem}
-  button{font:inherit;font-size:1.4rem;width:44px;height:44px;border:none;border-radius:50%;background:var(--pink);color:#fff;cursor:pointer;transition:transform .15s}
-  button:hover{transform:scale(1.1) rotate(-8deg)}
+  header button{font:inherit;font-size:1.4rem;width:44px;height:44px;border:none;border-radius:50%;background:var(--pink);color:#fff;cursor:pointer;transition:transform .15s}
+  header button:hover{transform:scale(1.1) rotate(-8deg)}
   #grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin:16px 0}
   .h{text-align:center;font-weight:700;font-size:.85rem;padding:4px 0;border-radius:12px;background:var(--sky)}
   .h:first-child,.h:nth-child(7){background:var(--pink2)}
@@ -36,24 +46,73 @@
 </head>
 <body>
 <h1>🐰 บันทึกชั่วโมงทำงาน ✨</h1>
-<header><button id="prev" aria-label="เดือนก่อน">‹</button><h2 id="title"></h2><button id="next" aria-label="เดือนถัดไป">›</button></header>
-<div id="grid"></div>
 
-<h3>🍓 สรุปเดือนนี้</h3>
-<div class="sum"><div>⏰ ชั่วโมงทำงาน<b id="mW"></b></div><div>🌙 โอที (ชม.)<b id="mO"></b></div><div>💰 เงินโอที (บาท)<b id="mM"></b></div></div>
-<h3>🧁 รวมทั้งหมด</h3>
-<div class="sum"><div>⏰ ชั่วโมงทำงาน<b id="tW"></b></div><div>🌙 โอที (ชม.)<b id="tO"></b></div><div>💰 เงินโอที (บาท)<b id="tM"></b></div></div>
+<form id="login" class="card">
+  <h2>🔐 เข้าสู่ระบบ</h2>
+  <input id="user" placeholder="ชื่อผู้ใช้" autocomplete="username" aria-label="ชื่อผู้ใช้">
+  <input id="pass" type="password" placeholder="รหัสผ่าน" autocomplete="current-password" aria-label="รหัสผ่าน">
+  <p id="msg" role="alert"></p>
+  <button class="btn">เข้าสู่ระบบ</button>
+  <button class="btn alt" type="button" id="signup">สมัครใหม่</button>
+</form>
+
+<main id="app" hidden>
+  <div class="bar"><span>👋 สวัสดี <b id="who"></b></span><button class="btn alt" type="button" id="logout">ออกจากระบบ</button></div>
+  <header><button id="prev" aria-label="เดือนก่อน">‹</button><h2 id="title"></h2><button id="next" aria-label="เดือนถัดไป">›</button></header>
+  <div id="grid"></div>
+
+  <h3>🍓 สรุปเดือนนี้</h3>
+  <div class="sum"><div>⏰ ชั่วโมงทำงาน<b id="mW"></b></div><div>🌙 โอที (ชม.)<b id="mO"></b></div><div>💰 เงินโอที (บาท)<b id="mM"></b></div></div>
+  <h3>🧁 รวมทั้งหมด</h3>
+  <div class="sum"><div>⏰ ชั่วโมงทำงาน<b id="tW"></b></div><div>🌙 โอที (ชม.)<b id="tO"></b></div><div>💰 เงินโอที (บาท)<b id="tM"></b></div></div>
+</main>
 
 <script>
 const RATE = 75; // บาท ต่อ ชม. โอที
 const $ = id => document.getElementById(id);
 const fmt = n => n.toLocaleString('th-TH');
 const key = (y, m, d) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
 
-// ponytail: เก็บใน localStorage ของเบราว์เซอร์ — ล้างข้อมูลเบราว์เซอร์แล้วหาย
-let data = {}; // { "2026-10-10": [ชม.งาน, ชม.โอที] }
-try { data = JSON.parse(localStorage.getItem('workhours')) || {}; } catch {}
-const save = () => { try { localStorage.setItem('workhours', JSON.stringify(data)); } catch {} };
+// ponytail: บัญชีเก็บใน localStorage ของเบราว์เซอร์นี้ — แยกข้อมูลแต่ละคนบนเครื่องเดียวกัน
+// แต่ไม่ซิงก์ข้ามเครื่อง และคนที่เปิด DevTools ยังอ่านชั่วโมงได้ ถ้าต้องการจริงจังต้องมี backend (เช่น Firebase)
+// บัญชี: localStorage["user:<ชื่อ>"] = { salt, hash, data: { "2026-10-10": [ชม.งาน, ชม.โอที] } }
+let acc = null, accKey = null, data = {};
+const load = k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } };
+const save = () => {
+  try { localStorage.setItem(accKey, JSON.stringify(acc)); return true; }
+  catch { alert('บันทึกข้อมูลไม่สำเร็จ'); }
+};
+
+async function hashPw(pw, salt) {
+  const k = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveBits']);
+  return b64(await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: new TextEncoder().encode(salt), iterations: 100000, hash: 'SHA-256' }, k, 256));
+}
+
+async function enter(isNew) {
+  const name = $('user').value.trim().toLowerCase(), pw = $('pass').value;
+  const msg = t => { $('msg').textContent = t; };
+  if (!crypto.subtle) return msg('ต้องเปิดผ่าน https เช่น GitHub Pages');
+  if (!name || !pw) return msg('กรอกชื่อผู้ใช้และรหัสผ่านก่อนนะ');
+  const k = 'user:' + name;
+  let a = load(k), old = null;
+  if (isNew) {
+    if (a) return msg('ชื่อนี้มีคนใช้แล้ว ลองชื่ออื่นนะ');
+    const salt = b64(crypto.getRandomValues(new Uint8Array(16)));
+    a = { salt, hash: await hashPw(pw, salt), data: {} };
+    old = load('workhours'); // ข้อมูลจากเวอร์ชันก่อนที่ยังไม่มีระบบผู้ใช้
+    if (old && confirm('พบข้อมูลเดิมในเครื่องนี้ ย้ายเข้าบัญชีนี้ไหม?')) a.data = old; else old = null;
+  } else if (!a || a.hash !== await hashPw(pw, a.salt)) {
+    return msg('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+  }
+  acc = a; accKey = k; data = a.data;
+  if (save() && old) localStorage.removeItem('workhours');
+  $('pass').value = '';
+  $('who').textContent = name;
+  $('login').hidden = true; $('app').hidden = false;
+  render();
+}
 
 const view = new Date(); view.setDate(1);
 
@@ -93,9 +152,11 @@ $('grid').oninput = e => {
   e.target.parentNode.classList.toggle('has', !!data[k]);
   save(); summary();
 };
+$('login').onsubmit = e => { e.preventDefault(); enter(false); };
+$('signup').onclick = () => enter(true);
+$('logout').onclick = () => location.reload(); // ล้างทุกอย่างในหน่วยความจำ กลับหน้าเข้าสู่ระบบ
 $('prev').onclick = () => { view.setMonth(view.getMonth() - 1); render(); };
 $('next').onclick = () => { view.setMonth(view.getMonth() + 1); render(); };
-render();
 </script>
 </body>
 </html>
