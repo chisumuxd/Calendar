@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>บันทึกชั่วโมงทำงาน</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Mali:wght@400;600;700&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"></script>
 <style>
   :root{--pink:#ffb6c8;--pink2:#ffe4ec;--hot:#ff7aa2;--mint:#c8f0e0;--sky:#d6ecff;--lemon:#fff6c7;--text:#6b4a5a}
   [hidden]{display:none!important}
@@ -18,8 +19,10 @@
   #msg{color:#e0457b;margin:0;min-height:1.2em;font-size:.9rem}
   .btn{font:inherit;font-size:1rem;padding:10px;border:none;border-radius:999px;background:var(--hot);color:#fff;cursor:pointer}
   .btn.alt{background:var(--mint);color:var(--text)}
-  .bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
-  .bar .btn{padding:6px 14px;font-size:.85rem}
+  .bar{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px}
+  .bar .btn{padding:6px 14px;font-size:.85rem;flex-shrink:0}
+  #who{word-break:break-all}
+  #status{font-size:.8rem}
   header{display:flex;align-items:center;justify-content:space-between;background:#fff;border-radius:24px;padding:6px 10px;box-shadow:0 4px 0 var(--pink)}
   header h2{margin:0;font-size:1.3rem}
   header button{font:inherit;font-size:1.4rem;width:44px;height:44px;border:none;border-radius:50%;background:var(--pink);color:#fff;cursor:pointer;transition:transform .15s}
@@ -49,15 +52,15 @@
 
 <form id="login" class="card">
   <h2>🔐 เข้าสู่ระบบ</h2>
-  <input id="user" placeholder="ชื่อผู้ใช้" autocomplete="username" aria-label="ชื่อผู้ใช้">
-  <input id="pass" type="password" placeholder="รหัสผ่าน" autocomplete="current-password" aria-label="รหัสผ่าน">
+  <input id="email" type="email" placeholder="อีเมล" autocomplete="email" aria-label="อีเมล">
+  <input id="pass" type="password" placeholder="รหัสผ่าน (6 ตัวขึ้นไป)" autocomplete="current-password" aria-label="รหัสผ่าน">
   <p id="msg" role="alert"></p>
   <button class="btn">เข้าสู่ระบบ</button>
   <button class="btn alt" type="button" id="signup">สมัครใหม่</button>
 </form>
 
 <main id="app" hidden>
-  <div class="bar"><span>👋 สวัสดี <b id="who"></b></span><button class="btn alt" type="button" id="logout">ออกจากระบบ</button></div>
+  <div class="bar"><span>👋 <b id="who"></b> <span id="status" role="status"></span></span><button class="btn alt" type="button" id="logout">ออกจากระบบ</button></div>
   <header><button id="prev" aria-label="เดือนก่อน">‹</button><h2 id="title"></h2><button id="next" aria-label="เดือนถัดไป">›</button></header>
   <div id="grid"></div>
 
@@ -67,51 +70,87 @@
   <div class="sum"><div>⏰ ชั่วโมงทำงาน<b id="tW"></b></div><div>🌙 โอที (ชม.)<b id="tO"></b></div><div>💰 เงินโอที (บาท)<b id="tM"></b></div></div>
 </main>
 
+<!--
+  ตารางใน Supabase (วางใน SQL Editor แล้วกด Run ครั้งเดียว):
+
+  create table work_hours (
+    user_id uuid not null references auth.users on delete cascade,
+    day date not null,
+    work numeric not null default 0 check (work between 0 and 24),
+    ot numeric not null default 0 check (ot between 0 and 24),
+    primary key (user_id, day)
+  );
+  alter table work_hours enable row level security;
+  create policy "own rows" on work_hours for all
+    using (auth.uid() = user_id) with check (auth.uid() = user_id);
+-->
 <script>
+// ใส่ค่าจาก Supabase → Project Settings → API (key นี้เปิดเผยได้ ข้อมูลถูกกันด้วย row level security)
+const SUPABASE_URL = 'https://dyvybduliytimvcjoucm.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR5dnliZHVsaXl0aW12Y2pvdWNtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxMDI4MzgsImV4cCI6MjEwNzY3ODgzOH0.RbM5XQVeJy1Wv0w5cyeMBc3RXMpIlSKmHPlE2DQfn4A';
 const RATE = 75; // บาท ต่อ ชม. โอที
+
 const $ = id => document.getElementById(id);
 const fmt = n => n.toLocaleString('th-TH');
 const key = (y, m, d) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
-
-// ponytail: บัญชีเก็บใน localStorage ของเบราว์เซอร์นี้ — แยกข้อมูลแต่ละคนบนเครื่องเดียวกัน
-// แต่ไม่ซิงก์ข้ามเครื่อง และคนที่เปิด DevTools ยังอ่านชั่วโมงได้ ถ้าต้องการจริงจังต้องมี backend (เช่น Firebase)
-// บัญชี: localStorage["user:<ชื่อ>"] = { salt, hash, data: { "2026-10-10": [ชม.งาน, ชม.โอที] } }
-let acc = null, accKey = null, data = {};
 const load = k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } };
-const save = () => {
-  try { localStorage.setItem(accKey, JSON.stringify(acc)); return true; }
-  catch { alert('บันทึกข้อมูลไม่สำเร็จ'); }
+const status = t => { $('status').textContent = t; };
+
+// persistSession: false → ไม่จำการเข้าสู่ระบบ รีเฟรช/ปิดเว็บแล้วต้องเข้าใหม่
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
+const TH = {
+  'Invalid login credentials': 'อีเมลหรือรหัสผ่านไม่ถูกต้อง',
+  'User already registered': 'อีเมลนี้สมัครไว้แล้ว',
+  'Email not confirmed': 'ยังไม่ได้กดลิงก์ยืนยันในอีเมล',
 };
 
-async function hashPw(pw, salt) {
-  const k = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveBits']);
-  return b64(await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', salt: new TextEncoder().encode(salt), iterations: 100000, hash: 'SHA-256' }, k, 256));
-}
+let uid = null, data = {}; // data = { "2026-10-16": [ชม.งาน, ชม.โอที] }
 
 async function enter(isNew) {
-  const name = $('user').value.trim().toLowerCase(), pw = $('pass').value;
   const msg = t => { $('msg').textContent = t; };
-  if (!crypto.subtle) return msg('ต้องเปิดผ่าน https เช่น GitHub Pages');
-  if (!name || !pw) return msg('กรอกชื่อผู้ใช้และรหัสผ่านก่อนนะ');
-  const k = 'user:' + name;
-  let a = load(k), old = null;
-  if (isNew) {
-    if (a) return msg('ชื่อนี้มีคนใช้แล้ว ลองชื่ออื่นนะ');
-    const salt = b64(crypto.getRandomValues(new Uint8Array(16)));
-    a = { salt, hash: await hashPw(pw, salt), data: {} };
-    old = load('workhours'); // ข้อมูลจากเวอร์ชันก่อนที่ยังไม่มีระบบผู้ใช้
-    if (old && confirm('พบข้อมูลเดิมในเครื่องนี้ ย้ายเข้าบัญชีนี้ไหม?')) a.data = old; else old = null;
-  } else if (!a || a.hash !== await hashPw(pw, a.salt)) {
-    return msg('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+  const email = $('email').value.trim(), password = $('pass').value;
+  if (SUPABASE_URL.includes('xxxx')) return msg('ยังไม่ได้ใส่ SUPABASE_URL / KEY ในไฟล์');
+  if (!email || !password) return msg('กรอกอีเมลและรหัสผ่านก่อนนะ');
+  msg('รอสักครู่…');
+  const { data: auth, error } = isNew
+    ? await sb.auth.signUp({ email, password })
+    : await sb.auth.signInWithPassword({ email, password });
+  if (error) return msg(TH[error.message] || error.message);
+  if (!auth.session) return msg('📧 ส่งลิงก์ยืนยันไปที่อีเมลแล้ว กดยืนยันแล้วกลับมาเข้าสู่ระบบนะ');
+  uid = auth.user.id;
+
+  const old = load('workhours'); // ข้อมูลจากเวอร์ชันแรกที่เก็บไว้ในเครื่อง
+  if (old && confirm('พบข้อมูลเดิมในเครื่องนี้ ย้ายเข้าบัญชีนี้ไหม?')) {
+    const rows = Object.entries(old).map(([day, [work, ot]]) => ({ user_id: uid, day, work, ot }));
+    const { error } = await sb.from('work_hours').upsert(rows);
+    if (error) return msg('ย้ายข้อมูลเดิมไม่สำเร็จ: ' + error.message);
+    localStorage.removeItem('workhours');
   }
-  acc = a; accKey = k; data = a.data;
-  if (save() && old) localStorage.removeItem('workhours');
-  $('pass').value = '';
-  $('who').textContent = name;
+
+  // ponytail: Supabase ส่งได้ทีละ 1,000 แถว = ~1,000 วันที่มีข้อมูล เกินนั้นค่อยแบ่งหน้า (.range) หรือรวมยอดใน SQL
+  const { data: rows, error: loadErr } = await sb.from('work_hours').select('day, work, ot');
+  if (loadErr) return msg('โหลดข้อมูลไม่สำเร็จ: ' + loadErr.message);
+  data = Object.fromEntries(rows.map(r => [r.day, [+r.work, +r.ot]]));
+
+  msg(''); $('pass').value = '';
+  $('who').textContent = email;
   $('login').hidden = true; $('app').hidden = false;
   render();
+}
+
+// บันทึกทีละวัน หลังหยุดพิมพ์ 0.6 วิ — ต่อคิวรายวันเพื่อไม่ให้คำขอเก่ามาทับค่าใหม่
+const timers = {}, chains = {}, unsaved = new Set();
+const queueSave = k => { clearTimeout(timers[k]); timers[k] = setTimeout(() => flush(k), 600); };
+function flush(k) {
+  clearTimeout(timers[k]); delete timers[k];
+  return chains[k] = (chains[k] || Promise.resolve()).then(async () => {
+    const [work, ot] = data[k] || [];
+    const { error } = data[k]
+      ? await sb.from('work_hours').upsert({ user_id: uid, day: k, work, ot })
+      : await sb.from('work_hours').delete().eq('user_id', uid).eq('day', k);
+    if (error) unsaved.add(k); else if (!timers[k]) unsaved.delete(k);
+    status(error ? '⚠️ บันทึกไม่สำเร็จ: ' + error.message : unsaved.size ? '💾 กำลังบันทึก…' : '✅ บันทึกแล้ว');
+  });
 }
 
 const view = new Date(); view.setDate(1);
@@ -147,14 +186,23 @@ function summary() {
 $('grid').oninput = e => {
   const { k, i } = e.target.dataset;
   const v = data[k] || [0, 0];
-  v[i] = Math.max(0, parseFloat(e.target.value) || 0);
+  v[i] = Math.min(24, Math.max(0, parseFloat(e.target.value) || 0));
   if (v[0] || v[1]) data[k] = v; else delete data[k];
   e.target.parentNode.classList.toggle('has', !!data[k]);
-  save(); summary();
+  unsaved.add(k); queueSave(k); status('💾 กำลังบันทึก…');
+  summary();
 };
 $('login').onsubmit = e => { e.preventDefault(); enter(false); };
 $('signup').onclick = () => enter(true);
-$('logout').onclick = () => location.reload(); // ล้างทุกอย่างในหน่วยความจำ กลับหน้าเข้าสู่ระบบ
+$('logout').onclick = async () => {
+  status('💾 กำลังบันทึก…');
+  await Promise.all(Object.keys(timers).map(k => flush(k)));
+  await Promise.all(Object.values(chains));
+  if (unsaved.size && !confirm('ยังบันทึกบางวันไม่สำเร็จ ออกเลยไหม?')) return;
+  await sb.auth.signOut();
+  location.reload(); // ล้างทุกอย่างในหน่วยความจำ กลับหน้าเข้าสู่ระบบ
+};
+addEventListener('beforeunload', e => { if (unsaved.size) { e.preventDefault(); e.returnValue = ''; } });
 $('prev').onclick = () => { view.setMonth(view.getMonth() - 1); render(); };
 $('next').onclick = () => { view.setMonth(view.getMonth() + 1); render(); };
 </script>
