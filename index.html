@@ -52,7 +52,7 @@
 
 <form id="login" class="card">
   <h2>🔐 เข้าสู่ระบบ</h2>
-  <input id="email" type="email" placeholder="อีเมล" autocomplete="email" aria-label="อีเมล">
+  <input id="user" placeholder="ชื่อผู้ใช้" autocomplete="username" autocapitalize="none" aria-label="ชื่อผู้ใช้">
   <input id="pass" type="password" placeholder="รหัสผ่าน (6 ตัวขึ้นไป)" autocomplete="current-password" aria-label="รหัสผ่าน">
   <p id="msg" role="alert"></p>
   <button class="btn">เข้าสู่ระบบ</button>
@@ -88,6 +88,7 @@
 // ใส่ค่าจาก Supabase → Project Settings → API (key นี้เปิดเผยได้ ข้อมูลถูกกันด้วย row level security)
 const SUPABASE_URL = 'https://dyvybduliytimvcjoucm.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR5dnliZHVsaXl0aW12Y2pvdWNtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxMDI4MzgsImV4cCI6MjEwNzY3ODgzOH0.RbM5XQVeJy1Wv0w5cyeMBc3RXMpIlSKmHPlE2DQfn4A';
+const DOMAIN = '@bk.com'; // พิมพ์แค่ชื่อผู้ใช้ ระบบต่อท้ายให้เป็นอีเมล (ต้องปิด Confirm email ใน Supabase)
 const RATE = 75; // บาท ต่อ ชม. โอที
 
 const $ = id => document.getElementById(id);
@@ -99,24 +100,26 @@ const status = t => { $('status').textContent = t; };
 // persistSession: false → ไม่จำการเข้าสู่ระบบ รีเฟรช/ปิดเว็บแล้วต้องเข้าใหม่
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
 const TH = {
-  'Invalid login credentials': 'อีเมลหรือรหัสผ่านไม่ถูกต้อง',
-  'User already registered': 'อีเมลนี้สมัครไว้แล้ว',
-  'Email not confirmed': 'ยังไม่ได้กดลิงก์ยืนยันในอีเมล',
+  'Invalid login credentials': 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง',
+  'User already registered': 'ชื่อนี้มีคนใช้แล้ว ลองชื่ออื่นนะ',
+  'Email not confirmed': 'ระบบยังเปิดยืนยันอีเมลอยู่ ให้ผู้ดูแลปิด Confirm email ใน Supabase',
 };
 
 let uid = null, data = {}; // data = { "2026-10-16": [ชม.งาน, ชม.โอที] }
 
 async function enter(isNew) {
   const msg = t => { $('msg').textContent = t; };
-  const email = $('email').value.trim(), password = $('pass').value;
+  const user = $('user').value.trim().toLowerCase().replace(DOMAIN, ''), password = $('pass').value;
+  const email = user + DOMAIN;
   if (SUPABASE_URL.includes('xxxx')) return msg('ยังไม่ได้ใส่ SUPABASE_URL / KEY ในไฟล์');
-  if (!email || !password) return msg('กรอกอีเมลและรหัสผ่านก่อนนะ');
+  if (!user || !password) return msg('กรอกชื่อผู้ใช้และรหัสผ่านก่อนนะ');
+  if (!/^[a-z0-9._-]+$/.test(user)) return msg('ชื่อผู้ใช้ใช้ได้แค่ a-z 0-9 . _ -');
   msg('รอสักครู่…');
   const { data: auth, error } = isNew
     ? await sb.auth.signUp({ email, password })
     : await sb.auth.signInWithPassword({ email, password });
   if (error) return msg(TH[error.message] || error.message);
-  if (!auth.session) return msg('📧 ส่งลิงก์ยืนยันไปที่อีเมลแล้ว กดยืนยันแล้วกลับมาเข้าสู่ระบบนะ');
+  if (!auth.session) return msg(TH['Email not confirmed']);
   uid = auth.user.id;
 
   const old = load('workhours'); // ข้อมูลจากเวอร์ชันแรกที่เก็บไว้ในเครื่อง
@@ -133,7 +136,7 @@ async function enter(isNew) {
   data = Object.fromEntries(rows.map(r => [r.day, [+r.work, +r.ot]]));
 
   msg(''); $('pass').value = '';
-  $('who').textContent = email;
+  $('who').textContent = user;
   $('login').hidden = true; $('app').hidden = false;
   render();
 }
