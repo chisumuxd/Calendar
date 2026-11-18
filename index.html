@@ -23,6 +23,11 @@
   .bar .btn{padding:6px 14px;font-size:.85rem;flex-shrink:0}
   #who{word-break:break-all}
   #status{font-size:.8rem}
+  .set{background:#fff;border-radius:18px;padding:8px 14px;margin-bottom:12px;box-shadow:0 3px 0 var(--sky)}
+  .set summary{cursor:pointer;font-weight:600}
+  .set label{display:block;margin-top:8px}
+  .set input{font:inherit;width:56px;text-align:center;border:1.5px dashed var(--pink);border-radius:10px;padding:2px;color:var(--text);background:#fffafb}
+  .set small{display:block;opacity:.75;margin-top:4px}
   header{display:flex;align-items:center;justify-content:space-between;background:#fff;border-radius:24px;padding:6px 10px;box-shadow:0 4px 0 var(--pink)}
   header h2{margin:0;font-size:1.3rem}
   header button{font:inherit;font-size:1.4rem;width:44px;height:44px;border:none;border-radius:50%;background:var(--pink);color:#fff;cursor:pointer;transition:transform .15s}
@@ -61,10 +66,15 @@
 
 <main id="app" hidden>
   <div class="bar"><span>👋 <b id="who"></b> <span id="status" role="status"></span></span><button class="btn alt" type="button" id="logout">ออกจากระบบ</button></div>
+  <details class="set">
+    <summary>⚙️ ตั้งค่า</summary>
+    <label>✂️ ตัดยอดทุกวันที่ <input id="cut" type="number" min="1" max="31" inputmode="numeric"> ของเดือน</label>
+    <small>เช่น 25 = สรุปวันที่ 26 เดือนก่อน ถึง 25 เดือนนี้ · ตั้ง 31 = สรุปทั้งเดือน</small>
+  </details>
   <header><button id="prev" aria-label="เดือนก่อน">‹</button><h2 id="title"></h2><button id="next" aria-label="เดือนถัดไป">›</button></header>
   <div id="grid"></div>
 
-  <h3>🍓 สรุปเดือนนี้</h3>
+  <h3>🍓 สรุปรอบ <span id="range"></span></h3>
   <div class="sum"><div>⏰ ชั่วโมงทำงาน<b id="mW"></b></div><div>🌙 โอที (ชม.)<b id="mO"></b></div><div>💰 เงินโอที (บาท)<b id="mM"></b></div></div>
   <h3>🧁 รวมทั้งหมด</h3>
   <div class="sum"><div>⏰ ชั่วโมงทำงาน<b id="tW"></b></div><div>🌙 โอที (ชม.)<b id="tO"></b></div><div>💰 เงินโอที (บาท)<b id="tM"></b></div></div>
@@ -106,6 +116,7 @@ const TH = {
 };
 
 let uid = null, data = {}; // data = { "2026-10-16": [ชม.งาน, ชม.โอที] }
+let cut = 25; // วันตัดยอด เก็บใน user_metadata ของบัญชี Supabase (ไม่ต้องสร้างตารางเพิ่ม)
 
 async function enter(isNew) {
   const msg = t => { $('msg').textContent = t; };
@@ -121,6 +132,7 @@ async function enter(isNew) {
   if (error) return msg(TH[error.message] || error.message);
   if (!auth.session) return msg(TH['Email not confirmed']);
   uid = auth.user.id;
+  $('cut').value = cut = auth.user.user_metadata?.cutoff || 25;
 
   const old = load('workhours'); // ข้อมูลจากเวอร์ชันแรกที่เก็บไว้ในเครื่อง
   if (old && confirm('พบข้อมูลเดิมในเครื่องนี้ ย้ายเข้าบัญชีนี้ไหม?')) {
@@ -157,16 +169,21 @@ function flush(k) {
 }
 
 const view = new Date(); view.setDate(1);
+const dkey = dt => key(dt.getFullYear(), dt.getMonth(), dt.getDate());
+// วันตัดยอดของเดือน (เดือนที่สั้นกว่าวันตัดยอด ใช้วันสุดท้ายของเดือนแทน)
+const cutDay = (y, m) => Math.min(cut, new Date(y, m + 1, 0).getDate());
+// รอบของเดือนที่ดู = วันถัดจากวันตัดยอดเดือนก่อน ถึง วันตัดยอดเดือนนี้
+const period = (y, m) => [new Date(y, m - 1, cutDay(y, m - 1) + 1), new Date(y, m, cutDay(y, m))];
 
 function render() {
   const y = view.getFullYear(), m = view.getMonth(), now = new Date();
-  const todayKey = key(now.getFullYear(), now.getMonth(), now.getDate());
+  const todayKey = dkey(now), endDay = cutDay(y, m);
   $('title').textContent = view.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' });
   let html = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'].map(d => `<div class="h">${d}</div>`).join('')
     + '<div></div>'.repeat(new Date(y, m, 1).getDay());
   for (let d = 1, n = new Date(y, m + 1, 0).getDate(); d <= n; d++) {
     const k = key(y, m, d), [w, o] = data[k] || [];
-    html += `<div class="d${k === todayKey ? ' today' : ''}${data[k] ? ' has' : ''}"><b>${d}</b>
+    html += `<div class="d${k === todayKey ? ' today' : ''}${data[k] ? ' has' : ''}"><b>${d}${d === endDay ? ' ✂️' : ''}</b>
       <input type="number" min="0" max="24" step="0.5" inputmode="decimal" data-k="${k}" data-i="0" value="${w || ''}" placeholder="ชม.งาน" aria-label="ชั่วโมงทำงานวันที่ ${d}">
       <input type="number" min="0" max="24" step="0.5" inputmode="decimal" data-k="${k}" data-i="1" value="${o || ''}" placeholder="OT" aria-label="โอทีวันที่ ${d}">
     </div>`;
@@ -176,11 +193,14 @@ function render() {
 }
 
 function summary() {
-  const prefix = key(view.getFullYear(), view.getMonth(), 1).slice(0, 8); // "2026-10-"
+  const [start, end] = period(view.getFullYear(), view.getMonth());
+  const lo = dkey(start), hi = dkey(end); // "2026-10-26" .. "2026-11-25" เทียบเป็นข้อความได้เลย
+  const short = dt => dt.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
+  $('range').textContent = `${short(start)} – ${short(end)}`;
   let mw = 0, mo = 0, tw = 0, to = 0;
   for (const [k, [w, o]] of Object.entries(data)) {
     tw += w; to += o;
-    if (k.startsWith(prefix)) { mw += w; mo += o; }
+    if (k >= lo && k <= hi) { mw += w; mo += o; }
   }
   $('mW').textContent = fmt(mw); $('mO').textContent = fmt(mo); $('mM').textContent = fmt(mo * RATE);
   $('tW').textContent = fmt(tw); $('tO').textContent = fmt(to); $('tM').textContent = fmt(to * RATE);
@@ -194,6 +214,12 @@ $('grid').oninput = e => {
   e.target.parentNode.classList.toggle('has', !!data[k]);
   unsaved.add(k); queueSave(k); status('💾 กำลังบันทึก…');
   summary();
+};
+$('cut').onchange = async e => {
+  e.target.value = cut = Math.min(31, Math.max(1, parseInt(e.target.value) || 25));
+  render();
+  const { error } = await sb.auth.updateUser({ data: { cutoff: cut } });
+  status(error ? '⚠️ บันทึกการตั้งค่าไม่สำเร็จ: ' + error.message : '✅ บันทึกการตั้งค่าแล้ว');
 };
 $('login').onsubmit = e => { e.preventDefault(); enter(false); };
 $('signup').onclick = () => enter(true);
